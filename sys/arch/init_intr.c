@@ -33,6 +33,7 @@
 
 /* structures for keyboard/MIDI interrupt vectors */
 KBDVEC *syskey;
+static long old_kbdvec;
 static KBDVEC old_kbdvecs;
 
 long old_term;
@@ -96,7 +97,7 @@ init_intr (void)
 	ushort savesr;
 
 	syskey = (KBDVEC *) TRAP_Kbdvbase ();
-	old_kbdvecs = *syskey;
+	old_kbdvecs = *syskey; /* structure copy */
 
 # ifndef NO_AKP_KEYBOARD
 	if (!has_kbdvec) /* TOS versions without the KBDVEC vector */
@@ -118,10 +119,10 @@ init_intr (void)
 		 * This vector is called by the TOS ikbdsys routine to process
 		 * keyboard-only data. It is exactly what we need to hook.
 		 * TOS < 2.00 doesn't know about this vector but the new ikdsys
-		 * hadler hooked above if we're running over TOS < 2.00 will call it.
+		 * handler hooked above if we're running over TOS < 2.00 will call it.
 		 */
 		long *kbdvec = ((long *)syskey)-1;
-		install_vector (&old_kbdvecss, (long)kbdvec, newkeys);
+		install_vector (&old_kbdvec, (long)kbdvec, newkeys);
 	}
 
 	/* Workaround for FireTOS and CT60 TOS 2.xx.
@@ -280,7 +281,7 @@ restr_intr (void)
 	else
 	{
 		long *kbdvec = ((long *)syskey)-1;
-		*kbdvec = (long) old_kbdvecss;
+		*kbdvec = (long) old_kbdvec;
 	}
 # endif
 
