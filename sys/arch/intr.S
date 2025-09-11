@@ -227,7 +227,7 @@ mod5:	dc.w	5		// initial value matters
 	.globl	SYM(uptime)
 	.globl	SYM(uptimetick)
 	.globl	SYM(c20ms)
-	.globl	SYM(keyrec)
+	.globl	SYM(kbd_iorec)
 	.globl	SYM(kintr)
 	.globl	SYM(our_clock)
 	.globl	SYM(tlist)
@@ -260,7 +260,7 @@ SYM(mint_vbl):
 // ColdFire evaluation boards. ASCII characters are received on the serial
 // port and directly put into the character buffer.
 
-	move.l	SYM(keyrec),a0
+	move.l	SYM(kbd_iorec),a0
 	move.w	6(a0),d0
 	cmp.w	8(a0),d0
 #ifdef __mcoldfire__
@@ -469,7 +469,7 @@ L_switch:
 //
 	.globl	SYM(reset)
 	.globl	SYM(old_resvec)
-	.extern	SYM(restr_intr)
+	.extern	SYM(restore_TOS_vectors)
 	.globl	SYM(reboot)
 
 	FUNC(reboot)
@@ -500,7 +500,7 @@ SYM(reset):
 #else
 	movem.l	d0-d2/a0-a2,-(sp)	// save C registers
 #endif
-	jsr	SYM(restr_intr)		// restore interrupts
+	jsr	SYM(restore_TOS_vectors)		// restore interrupts
 #ifdef __mcoldfire__
 	movem.l	(sp),d0-d2/a0-a2	// restore registers
 	lea	24(sp),sp
@@ -624,22 +624,22 @@ SYM(newjvec):
 // In both cases, the goal is to call ikbd_scan with keyboard bytes.
 
 #ifndef NO_AKP_KEYBOARD
-	.globl	SYM(newkeys)
+	.globl	SYM(kbdvec_handler)
 	.globl	SYM(oldkeys)
 	.globl	SYM(ikbd_scan)
 
 	dc.l	0x58425241		// XBRA
 	dc.l	0x4d694e54		// MiNT
 SYM(oldkeys):	dc.l	0
-	FUNC(newkeys)
-SYM(newkeys):
+	FUNC(kbdvec_handler)
+SYM(kbdvec_handler):
 #ifdef __mcoldfire__
 	lea	-20(sp),sp
 	movem.l	d1-d2/a0-a2,(sp)
 #else
 	movem.l	d1-d2/a0-a2,-(sp)
 #endif
-	move.l	SYM(keyrec),-(sp)
+	move.l	SYM(kbd_iorec),-(sp)
 #ifdef __mcoldfire__
 	and.l	#0x00ff,d0
 #else
@@ -655,7 +655,7 @@ SYM(newkeys):
 	movem.l	(sp)+,d1-d2/a0-a2
 #endif
 	rts
-	END(newkeys)
+	END(kbdvec_handler)
 
 // Calling the keyclick routines. This is a helper for keyboard driver.
 
