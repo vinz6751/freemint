@@ -7,6 +7,8 @@
 | based on modm0asm.s by T. Bousch
 |
 
+#include "mint/xbra.h"
+
 yamaha	  = 0xFFFF8800
 mfp_gpip  = 0xFFFFFA01
 mfp_aer   = mfp_gpip +  2
@@ -148,7 +150,7 @@ _sl0_can_recv:
 | "Transmitter buffer empty" interrupt routine
 |
 
-	.long	0x58425241	| "XBRA"
+	.long	XBRA_MAGIC
 	.long	0x736c6970	| "slip"
 _sl0_old_txint:
 	.long	0xDEADFACE	| old vector
@@ -174,7 +176,7 @@ L_130:	movel	_sl0_old_txint, sp@-
 | Receiver interrupt routine
 |
 
-	.long	0x58425241	| "XBRA"
+	.long	XBRA_MAGIC
 	.long	0x736c6970	| "slip"
 _sl0_old_rxint:
 	.long	0xDEADFACE	| old vector
@@ -206,7 +208,7 @@ L_140:	movel	_sl0_old_rxint, sp@-
 | bit 6: underrun error
 |
 
-	.long	0x58425241	| "XBRA"
+	.long	XBRA_MAGIC
 	.long	0x736c6970	| "slip"
 _sl0_old_txerror:
 	.long	0xDEADFACE	| old vector
@@ -237,7 +239,7 @@ L_150:	movel	_sl0_old_txerror, sp@-
 | bit 6: overrun error
 |
 
-	.long	0x58425241	| "XBRA"
+	.long	XBRA_MAGIC
 	.long	0x736c6970	| "slip"
 _sl0_old_rxerror:
 	.long	0xDEADFACE	| old vector
@@ -263,7 +265,7 @@ L_160:	movel	_sl0_old_rxerror, sp@-
 |
 | DCD interrupt routine
 |
-	.long	0x58425241	| "XBRA"
+	.long	XBRA_MAGIC
 	.long	0x736c6970	| "slip"
 _sl0_old_dcdint:
 	.long	0xDEADFACE	| old vector
@@ -287,7 +289,7 @@ L_171:	addql	#2, sp
 |
 | CTS interrupt routine
 |
-	.long	0x58425241	| "XBRA"
+	.long	XBRA_MAGIC
 	.long	0x736c6970	| "slip"
 _sl0_old_ctsint:
 	.long	0xDEADFACE	| old vector
