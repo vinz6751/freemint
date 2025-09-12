@@ -96,7 +96,7 @@ install_TOS_vectors (void)
 		 * This vector is called by the TOS ikbdsys routine to process
 		 * keyboard-only data. It is exactly what we need to hook.
 		 * TOS < 2.00 doesn't know about this vector but the new ikdsys
-		 * hadler hooked above if we're running over TOS < 2.00 will call it.
+		 * handler hooked above if we're running over TOS < 2.00 will call it.
 		 */
 		long *kbdvec = ((long *)kbdvecs)-1;
 		install_vector (&old_kbdvec, (long)kbdvec, kbdvec_handler);
