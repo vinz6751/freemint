@@ -16,6 +16,7 @@
 
  /* These are vectors */
 
+#define ETV_TIMER	0x400
 #define ETV_CRITIC	0x404
 #define ETV_TERM	0x408
 #define RESVALID	0x426

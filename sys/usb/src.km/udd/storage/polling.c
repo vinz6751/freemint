@@ -10,6 +10,7 @@
 #ifndef TOSONLY
 #include "mint/mint.h"
 #endif
+#include "arch/tos_vars.h"
 #include "../../global.h"
 #include "../../usb.h"
 
@@ -110,12 +111,12 @@ void storage_int(void)
 		unsigned long *tmp_etv_timer_int;
 		struct xbra *tmp_xbra;
 
-#define ETV_TIMER 0x400
+#define XBRA 0x58425241
 #define USTR 0x55535452
 
 		/* If there is no devices with more than 1 LUN then uninstall polling routine */
 		if (!num_multilun_dev) {
-			first_etv_timer_int = (unsigned long) *(volatile unsigned long *) 0x400;
+			first_etv_timer_int = (unsigned long) *(volatile unsigned long *) ETV_TIMER;
 			tmp_xbra = (struct xbra *)(first_etv_timer_int - sizeof(struct xbra));
 
 			if (!first_etv_timer_int || tmp_xbra->xbra != XBRA)
@@ -183,8 +184,8 @@ void init_polling(void)
 		r = kthread_create(get_curproc (), stor_poll_thread, NULL, NULL, "usbstor");
 #else
 		r = Super (0L);
-		old_etv_timer_int = (void *) *(volatile unsigned long *) 0x400;
-		*(volatile unsigned long *) 0x400 = (unsigned long) interrupt_storage;
+		old_etv_timer_int = (void *) *(volatile unsigned long *) ETV_TIMER;
+		*(volatile unsigned long *) ETV_TIMER = (unsigned long) interrupt_storage;
 		SuperToUser (r);
 #endif
 	}
