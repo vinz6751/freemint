@@ -25,5 +25,20 @@
 # define MINT_MAGIC	0x4d694e54L /* "MiNT" */
 # define JMP_OPCODE	0x4EF9
 
+#ifndef __ASSEMBLER__
+
+#include "arch/init_intr.h" /* vector_handler_t */
+
+typedef struct _xbra_t {
+	long magic;
+	long id;
+	vector_handler_t old_handler;
+} xbra_t;
+
+xbra_t *xbra_get(const vector_handler_t *vector);
+vector_handler_t xbra_hook(vector_handler_t *vector, vector_handler_t new_handler);
+void xbra_unhook(vector_handler_t *vector);
+
+#endif
 
 # endif /* _mint_xbra_h */

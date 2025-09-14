@@ -8,48 +8,19 @@
 
 # include "mint/mint.h"
 
+typedef void _cdecl (*vector_handler_t)(void);
 
 /* interrupt vectors linked by install_vector() */
-extern long old_5ms;
-extern long old_bus;
-extern long old_addr;
-extern long old_ill;
-extern long old_divzero;
-extern long old_priv;
-extern long old_trace;
 extern long old_linef;
-extern long old_chk;
-extern long old_trapv;
-extern long old_mmuconf;
-extern long old_format;
-extern long old_cpv;
-extern long old_uninit;
-extern long old_spurious;
-extern long old_fpcp_0;
-extern long old_fpcp_1;
-extern long old_fpcp_2;
-extern long old_fpcp_3;
-extern long old_fpcp_4;
-extern long old_fpcp_5;
-extern long old_fpcp_6;
-extern long old_pmmuill;
-extern long old_pmmuacc;
+extern vector_handler_t old_fpcp_0;
+extern vector_handler_t old_fpcp_1;
+extern vector_handler_t old_fpcp_2;
+extern vector_handler_t old_fpcp_3;
+extern vector_handler_t old_fpcp_4;
+extern vector_handler_t old_fpcp_5;
+extern vector_handler_t old_fpcp_6;
 
-/* old reset vector */
-extern long old_resvec;
-
-/* old ikbd vector */
-extern long old_ikbd;
-
-/* old ikbd vector (other way) */
-extern long oldkeys;
-
-/* BIOS disk vectors */
-extern long old_mediach, old_getbpb, old_rwabs;
-
-/* Critical error handler */
-extern long old_criticerr;
-extern long old_exec_os;
+extern vector_handler_t old_exec_os;
 
 # if 0
 extern long 	*intr_shadow;

@@ -992,10 +992,10 @@ TE_X_JMP_OLD:
 // *after* MiNT. install_TOS_vectors() decides which traps to take, see there.
 
 	.globl	SYM(unused_trap)
-
+	.globl	SYM(v_rte)
 	dc.l	XBRA_MAGIC
 	dc.l	MINT_MAGIC
-	dc.l	v_rte
+	dc.l	SYM(v_rte)
 
 SYM(unused_trap):
 	move.w	#0x010b,-(sp)		// getpid
@@ -1005,7 +1005,7 @@ SYM(unused_trap):
 	move.w	#0x0111,-(sp)		// kill
 	trap	#1
 	addq.l	#0x08,sp
-v_rte:	rte				// and return :-)
+SYM(v_rte):	rte				// and return :-)
 
 // ************************
 // * miscellaneous things *

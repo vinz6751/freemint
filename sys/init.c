@@ -1169,7 +1169,7 @@ mint_thread(void *arg)
 	if (init_is_gem && init_prg)
 	{
 		boot_printf("init is gem and init_prg = %s\r\n", init_prg);
-		install_vector(&old_exec_os, EXEC_OS, (long _cdecl (*)())new_exec_os);
+		old_exec_os = install_vector((vector_handler_t*)EXEC_OS, (vector_handler_t)new_exec_os);
 	}
 
 	/* run any programs appearing after us in the AUTO folder */

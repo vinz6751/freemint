@@ -1,26 +1,34 @@
 /* Helper function to register FreeMiNT functions to a vector using the XBRA convention.
- * Licence:Public domain
+ * Licence: Public domain
  */
 
 #include "mint/xbra.h"
 
-long xbra_hook(long *vector, void _cdecl (*new_handler)()) 
+
+xbra_t *xbra_get(const vector_handler_t *vector)
 {
-	long old_handler;
-
-	/* Detect if the new_handler complies with the XBRA convention and if so,
-	 * automatically save the old handler. */
-	old_handler = *vector;
-	 *vector = (long*)new_handler;
-	if (vector[-3] == XBRA_MAGIC && vector[-2] == MINT_MAGIC)
-		vector[-1] = *old_handler;
-
-	return old_vector;
+	xbra_t *xbra = &((xbra_t*)*vector)[-1];
+	return (xbra->magic == XBRA_MAGIC && xbra->id == MINT_MAGIC) ? xbra : 0L;
 }
 
 
-void xbra_unhook(long *vector)
+vector_handler_t xbra_hook(vector_handler_t *vector, vector_handler_t new_handler) 
 {
-	if (vector[-3] == XBRA_MAGIC && vector[-2] == MINT_MAGIC)
-		*vector = vector[-1];
+	xbra_t *xbra = xbra_get(&new_handler);
+
+	xbra->old_handler = *vector;
+	*vector = new_handler;
+
+	clear_caches_for_changed_vector(vector, xbra->old_handler);
+
+	return xbra->old_handler;
+}
+
+
+void xbra_unhook(vector_handler_t *vector)
+{
+	vector_handler_t current_handler = *vector;
+	*vector = xbra_get(vector)->old_handler;
+
+	clear_caches_for_changed_vector(vector, current_handler);
 }
