@@ -12,22 +12,33 @@
 # ifndef _mint_xbra_h
 # define _mint_xbra_h
 
-
-typedef struct xbra xbra_vec;
-
-struct xbra
-{
-	long		xbra_magic;
-	long		xbra_id;
-	xbra_vec	*next;
-	short		jump;
-	long _cdecl	(*this)();
-};
-
+/* XBRA is a convention used in TOS programming when hooking vectors:
+ * When a vector is hooked:
+ * - the long at address "handler-12" is 'XBRA', to indicate compliance with this convention.
+ * - the long at address "handler-8" is a 4 ASCII character id of the owner of the handler
+ * - the long at address "handler-4" is the previous handler
+ * - the long at address "handler" is the handler itself (obviously).
+ * This file contains definitions only, so it can be included in assembly files.
+ */
 
 # define XBRA_MAGIC	0x58425241L /* "XBRA" */
 # define MINT_MAGIC	0x4d694e54L /* "MiNT" */
 # define JMP_OPCODE	0x4EF9
 
+#ifndef __ASSEMBLER__
+
+#include "arch/init_intr.h" /* vector_handler_t */
+
+typedef struct _xbra_t {
+	long magic;
+	long id;
+	vector_handler_t old_handler;
+} xbra_t;
+
+xbra_t *xbra_get(const vector_handler_t *vector);
+vector_handler_t xbra_hook(vector_handler_t *vector, vector_handler_t new_handler);
+void xbra_unhook(vector_handler_t *vector);
+
+#endif
 
 # endif /* _mint_xbra_h */

@@ -14,6 +14,7 @@
 # include "mint/mint.h"
 
 # include "mint/asm.h"
+# include "mint/xbra.h"
 
 # include "arch/acia.h"
 # include "arch/cpu.h"		/* cpush() */
@@ -21,6 +22,7 @@
 # include "arch/kernel.h"	/* enter_gemdos() */
 # include "arch/syscall.h"	/* new_xxx */
 # include "arch/tosbind.h"	/* TRAP_xxx() */
+# include "arch/tos_vars.h" /* Address of TOS variables */
 
 # include "arch/init_intr.h"
 
@@ -32,53 +34,101 @@
 # define RES_MAGIC	0x31415926L
 
 /* structures for keyboard/MIDI interrupt vectors */
-KBDVEC *syskey;
-static KBDVEC oldkey;
+KBDVEC *kbdvecs;
+static long old_kbdvec;
+static KBDVEC old_kbdvecs;
+static void hook_keyboard_vectors(void);
+static void unhook_keyboard_vectors(void);
 
-long old_term;
+long old_etv_erm;
 long old_resval;	/* old reset validation */
-long olddrvs;		/* BIOS drive map */
+long old_drvbits;	/* BIOS drive map */
 
-
-/* table of processor frame sizes in _words_ (not used on MC68000) */
-uchar framesizes[16] =
-{
-	/*0*/	0,	/* MC68010/M68020/M68030/M68040 short */
-	/*1*/	0,	/* M68020/M68030/M68040 throwaway */
-	/*2*/	2,	/* M68020/M68030/M68040 instruction error */
-	/*3*/	2,	/* M68040 floating point post instruction */
-	/*4*/	3,	/* MC68LC040/MC68EC040 unimplemented floating point instruction */
-			/* or */
-			/* MC68060 access error */
-	/*5*/	0,	/* NOTUSED */
-	/*6*/	0,	/* NOTUSED */
-	/*7*/	26,	/* M68040 access error */
-	/*8*/	25,	/* MC68010 long */
-	/*9*/	6,	/* M68020/M68030 mid instruction */
-	/*A*/	12,	/* M68020/M68030 short bus cycle */
-	/*B*/	42,	/* M68020/M68030 long bus cycle */
-	/*C*/	8,	/* CPU32 bus error */
-	/*D*/	0,	/* NOTUSED */
-	/*E*/	0,	/* NOTUSED */
-	/*F*/	13	/* 68070 and 9xC1xx microcontroller address error */
+/* This is a list of vectors and their new handlers, to be hook with XBRA */
+static const struct {
+	vector_handler_t *vector;
+	vector_handler_t handler;
+} vectors_with_xbra[] = {
+	{ (vector_handler_t*)VEC_BUS_ERROR, new_bus },
+	{ (vector_handler_t*)VEC_ADDRESS_ERROR, new_addr },
+	{ (vector_handler_t*)VEC_ILLEGAL_INSTRUCTION, new_ill },
+	{ (vector_handler_t*)VEC_DIVISION_BY_ZERO, new_divzero },
+	{ (vector_handler_t*)VEC_TRACE, new_trace },
+	// VEC_LINE_F is conditioned
+	{ (vector_handler_t*)VEC_CHK, new_chk },
+	{ (vector_handler_t*)VEC_TRAPV, new_trapv },
+	{ (vector_handler_t*)VEC_MMU_CONFIG_ERROR, new_mmuconf},
+	{ (vector_handler_t*)VEC_MMU1, new_mmu },
+	{ (vector_handler_t*)VEC_MMU2, new_pmmuacc },
+	{ (vector_handler_t*)VEC_FORMAT_ERROR, new_format },
+	{ (vector_handler_t*)VEC_COPRO_PROTOCOL_VIOLATION, new_cpv },
+	{ (vector_handler_t*)VEC_UNINITIALIZED, new_uninit },
+	{ (vector_handler_t*)VEC_SPURIOUS_INTERRUPT, new_spurious },
+	{ (vector_handler_t*)TRAP0, unused_trap },
+	{ (vector_handler_t*)TRAP1, mint_dos },		/* GEMDOS */
+#if 0
+	/* GEM, is hooked on request */
+	{ (vector_handler_t*)TRAP2, unused_trap },
+#endif
+	{ (vector_handler_t*)TRAP3, unused_trap },
+	{ (vector_handler_t*)TRAP4, unused_trap },
+	{ (vector_handler_t*)TRAP5, unused_trap },
+	{ (vector_handler_t*)TRAP6, unused_trap },
+	{ (vector_handler_t*)TRAP7, unused_trap },
+	{ (vector_handler_t*)TRAP8, unused_trap },
+	{ (vector_handler_t*)TRAP9, unused_trap },
+	{ (vector_handler_t*)TRAP10, unused_trap },
+	{ (vector_handler_t*)TRAP11, unused_trap },
+	{ (vector_handler_t*)TRAP12, unused_trap },
+	{ (vector_handler_t*)TRAP13, mint_bios },	/* BIOS   */
+	{ (vector_handler_t*)TRAP14, mint_xbios }, 	/* XBIOS  */
+#if 0
+	/* is used by NVDI 5.00 which isn't even polite enough to link it with XBRA */
+	{ (vector_handler_t*)TRAP15, unused_trap },
+#endif
+	{ (vector_handler_t*)ETV_CRITIC, (vector_handler_t)new_criticerr },
+	{ (vector_handler_t*)HDV_RW, (vector_handler_t)new_mediach },
+	{ (vector_handler_t*)HDV_MEDIACH, (vector_handler_t)new_rwabs },
+	{ (vector_handler_t*)HDV_BPB, (vector_handler_t)new_getbpb }
 };
 
-/* New XBRA installer. The XBRA structure must be located
- * directly before the routine it belongs to.
- */
+/* This is a list of vectors and where the old handler should be saved */
+static const struct {
+	vector_handler_t *vector;
+	vector_handler_t *save_to;
+} math_copro_vectors[] = {
+	{ (vector_handler_t*)VEC_FFCP0, &old_fpcp_0 },
+	{ (vector_handler_t*)VEC_FFCP1, &old_fpcp_1 },
+	{ (vector_handler_t*)VEC_FFCP2, &old_fpcp_2 },
+	{ (vector_handler_t*)VEC_FFCP3, &old_fpcp_3 },
+	{ (vector_handler_t*)VEC_FFCP4, &old_fpcp_4 },
+	{ (vector_handler_t*)VEC_FFCP5, &old_fpcp_5 },
+	{ (vector_handler_t*)VEC_FFCP6, &old_fpcp_6 }
+};
+
 
 void
-new_xbra_install (long *xv, long addr, long _cdecl (*func)())
+clear_caches_for_changed_vector(vector_handler_t *vector, vector_handler_t old_handler)
 {
-	*xv = *(long *)addr;
-	*(long *)addr = (long)func;
-
-	/* better to be safe... */
 # ifndef M68000
-	cpush ((long *) addr, sizeof (addr)); 
-	cpush (xv, sizeof (xv));
+	cpush ((long *) vector, sizeof (vector)); 
+	cpush ((long *) old_handler, sizeof (old_handler));
 # endif
 }
+
+vector_handler_t
+install_vector(vector_handler_t *vector, vector_handler_t new_handler)
+{
+	vector_handler_t old_handler;
+
+	old_handler = *(vector_handler_t *)vector;
+	*(vector_handler_t *)vector = new_handler;
+
+	clear_caches_for_changed_vector(vector, old_handler);
+
+	return *old_handler;
+}
+
 
 /*
  * initialize all interrupt vectors and new trap routines
@@ -88,67 +138,17 @@ new_xbra_install (long *xv, long addr, long _cdecl (*func)())
  */
 
 void
-init_intr (void)
+install_TOS_vectors (void)
 {
 	ushort savesr;
+	int i;
 
-	syskey = (KBDVEC *) TRAP_Kbdvbase ();
-	oldkey = *syskey;
+	hook_keyboard_vectors();
 
-# ifndef NO_AKP_KEYBOARD
-	if (!has_kbdvec) /* TOS versions without the KBDVEC vector */
-	{
-		/* We need to hook the ikbdsys vector. Our handler will have to deal
-		 * with ACIA registers, and to call the appropriate KBDVEC vectors
-		 * for keyboard, mouse, joystick, status and time packets. */
-		savesr = splhigh();
-		syskey->ikbdsys = (long)ikbdsys_handler;
-#ifndef M68000
-		cpush(&syskey->ikbdsys, sizeof(long));
-#endif
-		spl(savesr);
-	}
-	else
-	{
-		/* Hook the keyboard interrupt to call ikbd_scan() on keyboard data.
-		 * There is an undocumented vector just before the KBDVEC structure.
-		 * This vector is called by the TOS ikbdsys routine to process
-		 * keyboard-only data. It is exactly what we need to hook.
-		 * TOS < 2.00 doesn't know about this vector but the new ikdsys
-		 * hadler hooked above if we're running over TOS < 2.00 will call it.
-		 */
-		long *kbdvec = ((long *)syskey)-1;
-		new_xbra_install (&oldkeys, (long)kbdvec, newkeys);
-	}
-
-	/* Workaround for FireTOS and CT60 TOS 2.xx.
-	 * Needed because those TOS doesn't call the undocumented kbdvec vector
-	 * from their ikbdsys vector handler, besides they install the ikbdsys
-	 * routine as a ACIA interrupt handler, so we can't simply replace their
-	 * ikbdsys handler by ours. We need to hook a new ACIA handler which
-	 * will call our ikbdsys.
-	 */
-	unsigned short version = 0;
-#ifdef __mcoldfire__
-	const unsigned short *FT_TOS_VERSION_ADDR = (unsigned short *)0x00e80000;
-	if (coldfire_68k_emulation)
-		version = *FT_TOS_VERSION_ADDR;
-#else
-	const unsigned short *CT60_TOS_VERSION_ADDR = (unsigned short *)0xffe80000;
-	if (machine == machine_ct60)
-		version = *CT60_TOS_VERSION_ADDR;
-#endif
-	if (version >= 2)
-	{
-		savesr = splhigh();
-		syskey->ikbdsys = (long)ikbdsys_handler;
-		cpush(&syskey->ikbdsys, sizeof(long));
-		new_xbra_install(&old_acia, 0x0118L, new_acia);
-		spl(savesr);
-	}
-# endif /* NO_AKP_KEYBOARD */
-
-	old_term = (long) TRAP_Setexc (0x102, -1UL);
+	/* Documentation says that we should set etv_term using Setexc (this is to give
+	 * the OS a chance to maintain it per-program). We need to save it now, before we
+	 * hook TRAP #13 */
+	old_etv_erm = (long) TRAP_Setexc (ETV_TERM/4, -1UL);
 
 	savesr = splhigh();
 
@@ -159,36 +159,24 @@ init_intr (void)
 	 * The main problem is, that activating this makes ROM VDI
 	 * no more working, and actually any program that takes a
 	 * trap before MiNT is loaded.
-	 * WARNING: NVDI 5.00 uses trap #15 and isn't even polite
-	 * enough to link it with XBRA.
 	 */
 
-	{
-	long dummy;
+	for (i=0; i<ARRAY_SIZE(vectors_with_xbra); i++)
+		xbra_hook (vectors_with_xbra[i].vector, vectors_with_xbra[i].handler);
 
-	new_xbra_install (&dummy, 0x80L, unused_trap);		/* trap #0 */
-	new_xbra_install (&old_dos, 0x84L, mint_dos);		/* trap #1, GEMDOS */	
-# if 0	/* we only install this on request yet */
-	new_xbra_install (&old_trap2, 0x88L, mint_trap2);	/* trap #2, GEM */
-# endif
-	new_xbra_install (&dummy, 0x8cL, unused_trap);		/* trap #3 */
-	new_xbra_install (&dummy, 0x90L, unused_trap);		/* trap #4 */
-	new_xbra_install (&dummy, 0x94L, unused_trap);		/* trap #5 */
-	new_xbra_install (&dummy, 0x98L, unused_trap);		/* trap #6 */
-	new_xbra_install (&dummy, 0x9cL, unused_trap);		/* trap #7 */
-	new_xbra_install (&dummy, 0xa0L, unused_trap);		/* trap #8 */
-	new_xbra_install (&dummy, 0xa4L, unused_trap);		/* trap #9 */
-	new_xbra_install (&dummy, 0xa8L, unused_trap);		/* trap #10 */
-	new_xbra_install (&dummy, 0xacL, unused_trap);		/* trap #11 */
-	new_xbra_install (&dummy, 0xb0L, unused_trap);		/* trap #12 */
-	new_xbra_install (&old_bios, 0xb4L, mint_bios);		/* trap #13, BIOS */
-	new_xbra_install (&old_xbios, 0xb8L, mint_xbios);	/* trap #14, XBIOS */
-# if 0
-	new_xbra_install (&dummy, 0xbcL, unused_trap);		/* trap #15 */
-# endif
-	}
+	if (tosvers >= 0x106)
+		xbra_hook ((vector_handler_t*)VEC_LINE_F, new_linef);
 
-	new_xbra_install (&old_criticerr, 0x404L, (long (*)(void))new_criticerr);
+	/* We used xbra_hook(trapX, unused_trap) on several traps and we don't care about
+	 * the "old vector" (which got overwritten anyway so is likely somewhat undefined)
+	 * so we reset it to what it should be. TRAP0 is as good as any other unused trap.
+	 */
+	xbra_get((vector_handler_t*)TRAP0)->old_handler = v_rte;
+
+	/* Math coprocessor exceptions. These share the same handler but have different
+	 * "old handler"s so we can't use xbra_hook. */
+	for (i=0; i<ARRAY_SIZE(math_copro_vectors); i++)
+		*(math_copro_vectors[i].save_to) = install_vector (math_copro_vectors[i].vector, new_fpcp);
 
 	/* Hook the 200 Hz system timer. Our handler will do its job,
 	 * then call the previous handler. Every four interrupts, our handler will
@@ -197,52 +185,17 @@ init_intr (void)
 	 * to mimic a 50 Hz VBL interrupt.
 	 */
 
-	new_xbra_install (&old_5ms, (long)p5msvec, mint_5ms);
+	xbra_hook ((vector_handler_t*)p5msvec, mint_5ms);
 
 #if 0	/* this should really not be necessary ... rincewind */
-	new_xbra_install (&old_resvec, 0x042aL, reset);
+	install_vector (&old_resvec, 0x042aL, reset);
 	old_resval = *((long *)0x426L);
 	*((long *) 0x426L) = RES_MAGIC;
 #endif
 
 	spl (savesr);
 
-	/* set up signal handlers */
-	new_xbra_install (&old_bus, 8L, new_bus);
-	new_xbra_install (&old_addr, 12L, new_addr);
-	new_xbra_install (&old_ill, 16L, new_ill);
-	new_xbra_install (&old_divzero, 20L, new_divzero);
-	new_xbra_install (&old_trace, 36L, new_trace);
-
-	new_xbra_install (&old_priv, 32L, new_priv);
-
-	if (tosvers >= 0x106)
-		new_xbra_install (&old_linef, 44L, new_linef);
-
-	new_xbra_install (&old_chk, 24L, new_chk);
-	new_xbra_install (&old_trapv, 28L, new_trapv);
-
-	new_xbra_install (&old_fpcp_0, 192L + (0 * 4), new_fpcp);
-	new_xbra_install (&old_fpcp_1, 192L + (1 * 4), new_fpcp);
-	new_xbra_install (&old_fpcp_2, 192L + (2 * 4), new_fpcp);
-	new_xbra_install (&old_fpcp_3, 192L + (3 * 4), new_fpcp);
-	new_xbra_install (&old_fpcp_4, 192L + (4 * 4), new_fpcp);
-	new_xbra_install (&old_fpcp_5, 192L + (5 * 4), new_fpcp);
-	new_xbra_install (&old_fpcp_6, 192L + (6 * 4), new_fpcp);
-
-	new_xbra_install (&old_mmuconf, 224L, new_mmuconf);
-	new_xbra_install (&old_pmmuill, 228L, new_mmu);
-	new_xbra_install (&old_pmmuacc, 232L, new_pmmuacc);
-	new_xbra_install (&old_format, 56L, new_format);
-	new_xbra_install (&old_cpv, 52L, new_cpv);
-	new_xbra_install (&old_uninit, 60L, new_uninit);
-	new_xbra_install (&old_spurious, 96L, new_spurious);
-
-	/* set up disk vectors */
-	new_xbra_install (&old_mediach, 0x47eL, new_mediach);
-	new_xbra_install (&old_rwabs, 0x476L, new_rwabs);
-	new_xbra_install (&old_getbpb, 0x472L, new_getbpb);
-	olddrvs = *((long *) 0x4c2L);
+	old_drvbits = *((long *) _DRVBITS);
 
 	/* we'll be making GEMDOS calls */
 	enter_gemdos ();
@@ -261,71 +214,167 @@ init_intr (void)
  */
 
 void
-restr_intr (void)
+restore_TOS_vectors (void)
 {
 	ushort savesr;
+	int i;
 
 	savesr = splhigh();
 
-	*syskey = oldkey;	/* restore keyboard vectors */
+	unhook_keyboard_vectors();
 
-# ifndef NO_AKP_KEYBOARD
+	for (i=0; i<ARRAY_SIZE(vectors_with_xbra); i++)
+		xbra_unhook(vectors_with_xbra[i].vector);
+
+	if (old_linef)
+		xbra_unhook((vector_handler_t*)VEC_LINE_F);
+
+#if 0
+	*((long *) RESVALID) = old_resval;
+	*((long *) RESVECTOR) = old_resvec;
+#endif
+
+	*((long *) _DRVBITS) = old_drvbits;
+
+	spl (savesr);
+}
+
+
+long _cdecl
+register_trap2(long _cdecl (*dispatch)(void *), int mode, int flag, long extra)
+{
+	long _cdecl (**handler)(void *) = NULL;
+	long *x = NULL;
+	long ret = EINVAL;
+
+	DEBUG(("register_trap2(0x%p, %i, %i)", dispatch, mode, flag));
+
+	if (flag == 0)
+	{
+		handler = &aes_handler;
+	}
+	else if (flag == 1)
+	{
+		handler = &vdi_handler;
+		x = &gdos_version;
+	}
+
+	if (mode == 0)
+	{
+		/* install */
+
+		if (*handler == NULL)
+		{
+			DEBUG(("register_trap2: installing handler at 0x%p", dispatch));
+
+			*handler = dispatch;
+			if (x)
+				*x = extra;
+			ret = 0;
+
+			/* if trap #2 is not active install it now */
+			if (old_trap2 == 0)
+				xbra_hook((vector_handler_t*)TRAP2, mint_trap2); /* trap #2, GEM */
+		}
+	}
+	else if (mode == 1)
+	{
+		/* deinstall */
+
+		if (*handler == dispatch)
+		{
+			DEBUG(("register_trap2: removing handler at 0x%p", dispatch));
+
+			*handler = NULL;
+			if (x)
+				*x = 0;
+			ret = 0;
+		}
+	}
+
+	return ret;
+}
+
+
+static void
+hook_keyboard_vectors(void)
+{
+	ushort savesr;
+
+	kbdvecs = (KBDVEC *) TRAP_Kbdvbase ();
+	old_kbdvecs = *kbdvecs; /* structure copy */
+
+#ifndef NO_AKP_KEYBOARD
+	if (!has_kbdvec) /* TOS versions without the KBDVEC vector */
+	{
+		/* We need to hook the ikbdsys vector. Our handler will have to deal
+		 * with ACIA registers, and to call the appropriate KBDVEC vectors
+		 * for keyboard, mouse, joystick, status and time packets. */
+		savesr = splhigh();
+		kbdvecs->ikbdsys = (long)ikbdsys_handler;
+# ifndef M68000
+		cpush(&kbdvecs->ikbdsys, sizeof(long));
+# endif
+		spl(savesr);
+	}
+	else
+	{
+		/* Hook the keyboard interrupt to call ikbd_scan() on keyboard data.
+		 * There is an undocumented vector just before the KBDVEC structure.
+		 * This vector is called by the TOS ikbdsys routine to process
+		 * keyboard-only data. It is exactly what we need to hook.
+		 * TOS < 2.00 doesn't know about this vector but the new ikdsys
+		 * handler hooked above if we're running over TOS < 2.00 will call it.
+		 */
+		vector_handler_t *kbdvec = ((vector_handler_t *)kbdvecs)-1;
+		xbra_hook (kbdvec, (vector_handler_t)kbdvec_handler);
+	}
+
+	/* Workaround for FireTOS and CT60 TOS 2.xx.
+	 * Needed because those TOS doesn't call the undocumented kbdvec vector
+	 * from their ikbdsys vector handler, besides they install the ikbdsys
+	 * routine as a ACIA interrupt handler, so we can't simply replace their
+	 * ikbdsys handler by ours. We need to hook a new ACIA handler which
+	 * will call our ikbdsys.
+	 */
+	unsigned short version = 0;
+# ifdef __mcoldfire__
+	const unsigned short *FT_TOS_VERSION_ADDR = (unsigned short *)0x00e80000;
+	if (coldfire_68k_emulation)
+		version = *FT_TOS_VERSION_ADDR;
+# else
+	const unsigned short *CT60_TOS_VERSION_ADDR = (unsigned short *)0xffe80000;
+	if (machine == machine_ct60)
+		version = *CT60_TOS_VERSION_ADDR;
+# endif
+	if (version >= 2)
+	{
+		savesr = splhigh();
+		kbdvecs->ikbdsys = (long)ikbdsys_handler;
+		cpush(&kbdvecs->ikbdsys, sizeof(long));
+		xbra_hook((vector_handler_t*)0x0118L, (vector_handler_t)new_acia);
+		spl(savesr);
+	}
+#endif /* NO_AKP_KEYBOARD */
+}
+
+
+static void
+unhook_keyboard_vectors(void)
+{
+	*kbdvecs = old_kbdvecs;	/* restore keyboard vectors (structure copy) */
+
+#ifndef NO_AKP_KEYBOARD
 	if (tosvers < 0x0200)
 	{
 		*((long *) 0x0118L) = old_acia;
 	}
 	else
 	{
-		long *kbdvec = ((long *)syskey)-1;
-		*kbdvec = (long) oldkeys;
+		long *kbdvec = ((long *)kbdvecs)-1;
+		*kbdvec = (long) old_kbdvec;
 	}
-# endif
-
-	*((long *) 0x008L) = old_bus;
-
-	*((long *) 0x00cL) = old_addr;
-	*((long *) 0x010L) = old_ill;
-	*((long *) 0x014L) = old_divzero;
-	*((long *) 0x024L) = old_trace;
-
-	if (old_linef)
-		*((long *) 0x2cL) = old_linef;
-
-	*((long *) 0x018L) = old_chk;
-	*((long *) 0x01cL) = old_trapv;
-
-	((long *) 0x0c0L)[0] = old_fpcp_0;
-	((long *) 0x0c0L)[1] = old_fpcp_1;
-	((long *) 0x0c0L)[2] = old_fpcp_2;
-	((long *) 0x0c0L)[3] = old_fpcp_3;
-	((long *) 0x0c0L)[4] = old_fpcp_4;
-	((long *) 0x0c0L)[5] = old_fpcp_5;
-	((long *) 0x0c0L)[6] = old_fpcp_6;
-
-	*((long *) 0x0e0L) = old_mmuconf;
-	*((long *) 0x0e4L) = old_pmmuill;
-	*((long *) 0x0e8L) = old_pmmuacc;
-	*((long *) 0x038L) = old_format;
-	*((long *) 0x034L) = old_cpv;
-	*((long *) 0x03cL) = old_uninit;
-	*((long *) 0x060L) = old_spurious;
-
-	*((long *) 0x084L) = old_dos;
-	*((long *) 0x0b4L) = old_bios;
-	*((long *) 0x0b8L) = old_xbios;
-	*((long *) 0x408L) = old_term;
-	*((long *) 0x404L) = old_criticerr;
-	*p5msvec = old_5ms;
-#if 0	//
-	*((long *) 0x426L) = old_resval;
-	*((long *) 0x42aL) = old_resvec;
 #endif
-	*((long *) 0x476L) = old_rwabs;
-	*((long *) 0x47eL) = old_mediach;
-	*((long *) 0x472L) = old_getbpb;
-	*((long *) 0x4c2L) = olddrvs;
-
-	spl (savesr);
 }
 
 /* EOF */

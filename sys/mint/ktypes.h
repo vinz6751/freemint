@@ -56,6 +56,8 @@ typedef unsigned long long		__u64;
 # error unsigned long long		__u64;
 # endif
 
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
+
 /* more conform typenames */
 typedef __s8  int8_t;
 typedef __s16 int16_t;

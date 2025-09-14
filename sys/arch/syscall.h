@@ -25,34 +25,35 @@
 /* values for original system vectors */
 extern long old_dos, old_bios, old_xbios, old_trap2;
 
-long	_cdecl	mint_trap2	(void);
-long	_cdecl	unused_trap	(void);
-long	_cdecl	mint_bios	(void);
-long	_cdecl	mint_dos	(void);
-long	_cdecl	mint_timer	(void);
-long	_cdecl	mint_vbl	(void);
-long	_cdecl	mint_5ms	(void);
-long	_cdecl	mint_xbios	(void);
-long	_cdecl	new_ikbd	(void);
-long	_cdecl	new_bus		(void);
-long	_cdecl	new_addr	(void);
-long	_cdecl	new_ill		(void);
-long	_cdecl	new_divzero	(void);
-long	_cdecl	new_trace	(void);
-long	_cdecl	new_priv	(void);
-long	_cdecl	new_linef	(void);
-long	_cdecl	new_chk		(void);
-long	_cdecl	new_trapv	(void);
-long	_cdecl	new_fpcp	(void);
-long	_cdecl	new_mmu		(void);
-long	_cdecl	new_mmuconf	(void);
-long	_cdecl	new_format	(void);
-long	_cdecl	new_cpv		(void);
-long	_cdecl	new_uninit	(void);
-long	_cdecl	new_spurious	(void);
-long	_cdecl	new_pmmuacc	(void);
+/* Simple RTE to return from exceptions. */
+void v_rte(void);
 
-long	_cdecl	new_criticerr	(long error);
+void	_cdecl	mint_trap2	(void);
+void	_cdecl	unused_trap	(void);
+void	_cdecl	mint_bios	(void);
+void	_cdecl	mint_dos	(void);
+void	_cdecl	mint_vbl	(void);
+void	_cdecl	mint_5ms	(void);
+void	_cdecl	mint_xbios	(void);
+void	_cdecl	new_bus		(void);
+void	_cdecl	new_addr	(void);
+void	_cdecl	new_ill		(void);
+void	_cdecl	new_divzero	(void);
+void	_cdecl	new_trace	(void);
+void	_cdecl	new_priv	(void);
+void	_cdecl	new_linef	(void);
+void	_cdecl	new_chk		(void);
+void	_cdecl	new_trapv	(void);
+void	_cdecl	new_fpcp	(void);
+void	_cdecl	new_mmu		(void);
+void	_cdecl	new_mmuconf	(void);
+void	_cdecl	new_format	(void);
+void	_cdecl	new_cpv		(void);
+void	_cdecl	new_uninit	(void);
+void	_cdecl	new_spurious(void);
+void	_cdecl	new_pmmuacc	(void);
+
+void	_cdecl	new_criticerr	(long error);
 void	_cdecl	new_exec_os (register long basepage);
 
 extern long gdos_version;
