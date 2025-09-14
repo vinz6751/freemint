@@ -129,7 +129,6 @@
 # include "rtl8139.h"
 
 /* ------------------------ Defines --------------------------------------- */
-#define ARRAY_SIZE(arr) (sizeof(arr) / (sizeof(arr)[0]))
 
 #ifndef OSBIND_CLOBBER_LIST
 #define OSBIND_CLOBBER_LIST __CLOBBER_RETURN("d0") "d1", "d2", "a0", "a1", "a2"    /* clobbered regs */	\
